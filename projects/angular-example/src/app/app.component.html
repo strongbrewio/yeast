@@ -1,0 +1,26 @@
+<table>
+  <tr *ngFor="let person of people$|async">
+    <td>
+      {{person?.name}}
+    </td>
+    <td>
+      <app-person [person]="person" (filmRemoved)="removeFilm($event)" (filmUpdated)="updateFilm($event)"></app-person>
+    </td>
+    <td>
+      <button (click)="updateName(person)">Add ! to name</button>
+    </td>
+    <td>
+      <button (click)="remove(person)">Remove</button>
+    </td>
+    <td><button (click)="selectPerson(person)">Select person</button></td>
+  </tr>
+</table>
+
+<button (click)="addPerson()">Add person</button>
+
+<pre>
+  {{selectedPerson$|async|json}}
+</pre>
+<pre>
+  {{personWithId6$|async|json}}
+</pre>
