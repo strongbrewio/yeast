@@ -17,6 +17,14 @@
     "lib": [
       "es2018",
       "dom"
-    ]
+    ],
+    "paths": {
+      "@yeast/state": [
+        "dist/yeast/state"
+      ],
+      "@yeast/state/*": [
+        "dist/yeast/state/*"
+      ]
+    }
   }
 }

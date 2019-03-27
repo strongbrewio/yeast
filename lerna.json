@@ -1,0 +1,6 @@
+{
+  "packages": [
+    "projects/yeast/*"
+  ],
+  "version": "0.0.1"
+}
