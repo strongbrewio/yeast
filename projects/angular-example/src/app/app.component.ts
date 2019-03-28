@@ -39,7 +39,7 @@ export class AppComponent {
 
 
   remove(person: Person): void {
-    this.state.remove<Person>(PeopleSelectors.person(person.id));
+    this.state.remove(PeopleSelectors.person(person.id));
   }
 
   selectPerson(person: Person): void {

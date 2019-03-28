@@ -1,15 +1,22 @@
 import { BehaviorSubject, Observable } from 'rxjs';
-import { distinctUntilChanged, filter, map, take } from 'rxjs/operators';
+import { distinctUntilChanged, filter, map } from 'rxjs/operators';
 import { BufferEntry } from './buffer-entry';
+import { StateHook } from './state-hook';
+import { ActionTypes } from './action-types';
 
 export class Store<T> {
   private stateSub$ = new BehaviorSubject<T>(null);
   private stateBuffer$ = new BehaviorSubject<BufferEntry<T>[]>([]);
   private itemsToBuffer = 0;
+  private hookFns: ((stateHook: StateHook<any>) => void)[] = [];
   state$ = this.stateSub$.pipe(filter(v => !!v));
 
   constructor(initialState: T) {
     this.stateSub$.next(initialState);
+  }
+
+  registerHook(fn: (stateHook: StateHook<any>) => void): void {
+    this.hookFns.push(fn);
   }
 
   startBuffer(itemsToBuffer = 100): void {
@@ -23,29 +30,52 @@ export class Store<T> {
   }
 
   remove(selectors: any[]): (state: T) => T {
+    const previousState = this.selectPartOfState(this.stateSub$.getValue(), selectors);
     const fn = (state: T) => this.removePartOfState(state, selectors);
     this.stateSub$.next(fn(this.stateSub$.getValue()));
     this.addToBuffer(fn);
+    const currentState = this.selectPartOfState(this.stateSub$.getValue(), selectors);
+    this.triggerHooks({ currentState, previousState, type: ActionTypes.Remove, selectors });
     return fn;
   }
 
   update(selectors: any[], itemToUpdate: any): (state: T) => T {
-    console.log('START UPDATE', this.selectPartOfState(this.stateSub$.getValue(), selectors));
-    console.log('-----------------------');
+    const previousState = this.selectPartOfState(this.stateSub$.getValue(), selectors);
     const fn = (state: T) => this.updatePartOfState(state, selectors, itemToUpdate);
     const newState = fn(this.stateSub$.getValue());
     this.stateSub$.next(newState);
     this.addToBuffer(fn);
-    console.log('END UPDATE', this.selectPartOfState(this.stateSub$.getValue(), selectors));
-    console.log('-----------------------');
+    const currentState = this.selectPartOfState(this.stateSub$.getValue(), selectors);
+    this.triggerHooks({ currentState, previousState, type: ActionTypes.Update, selectors });
     return fn;
   }
 
   add(selectors: any[], itemToUpdate: any): (state: T) => T {
+    const previousState = this.selectPartOfState(this.stateSub$.getValue(), selectors);
     const fn = (state: T) => this.pushPartOfState(state, selectors, itemToUpdate);
     this.stateSub$.next(fn(this.stateSub$.getValue()));
     this.addToBuffer(fn);
+    const currentState = this.selectPartOfState(this.stateSub$.getValue(), selectors);
+    this.triggerHooks({ currentState, previousState, type: ActionTypes.Add, selectors });
     return fn;
+  }
+
+  undo(fn: (state: T) => T): void {
+    const previousState = this.stateSub$.getValue();
+    const currentBuffer: BufferEntry<T>[] = [...this.stateBuffer$.getValue()];
+    const rolledBackState = currentBuffer
+      .filter(v => v.fn !== fn)
+      .map(v => v.fn)
+      .reduce((state: any, v) => v(state), currentBuffer[0].state);
+    this.stateSub$.next(rolledBackState);
+    this.stateBuffer$.next(currentBuffer
+      .filter(v => v.fn !== fn));
+
+    this.triggerHooks({ previousState, currentState: rolledBackState, type: ActionTypes.Undo, selectors: [] });
+  }
+
+  private triggerHooks(hook: StateHook<any>): void {
+    this.hookFns.forEach(fn => fn(hook));
   }
 
   private addToBuffer(fn: (state: T) => T): void {
@@ -74,7 +104,6 @@ export class Store<T> {
       return Array.isArray(state) ? [...itemToUpdate] : { ...itemToUpdate };
     }
     const foundItem = currentSelector(state);
-    console.log(currentSelector, foundItem);
     return (Array.isArray(state)
       ? state.map(i => i === foundItem
         ? this.updatePartOfState(foundItem, newSelectors, itemToUpdate)
@@ -110,17 +139,6 @@ export class Store<T> {
   private getKey<S>(object: S, item: any): string {
     return Object.keys(object)
       .find(k => object[k] === item);
-  }
-
-  undo(fn: (state: T) => T): void {
-    const currentBuffer: BufferEntry<T>[] = [...this.stateBuffer$.getValue()];
-    const rolledBackState = currentBuffer
-      .filter(v => v.fn !== fn)
-      .map(v => v.fn)
-      .reduce((state: any, v) => v(state), currentBuffer[0].state);
-    this.stateSub$.next(rolledBackState);
-    this.stateBuffer$.next(currentBuffer
-      .filter(v => v.fn !== fn));
   }
 }
 
