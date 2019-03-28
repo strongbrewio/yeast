@@ -1,18 +1,16 @@
 import { BehaviorSubject, Observable } from 'rxjs';
-import { distinctUntilChanged, filter, map } from 'rxjs/operators';
+import { distinctUntilChanged, filter, map, take } from 'rxjs/operators';
 import { BufferEntry } from './buffer-entry';
 
 export class Store<T> {
   private stateSub$ = new BehaviorSubject<T>(null);
+  private stateBuffer$ = new BehaviorSubject<BufferEntry<T>[]>([]);
+  private itemsToBuffer = 0;
   state$ = this.stateSub$.pipe(filter(v => !!v));
 
   constructor(initialState: T) {
     this.stateSub$.next(initialState);
   }
-
-  private stateBuffer$ = new BehaviorSubject<BufferEntry<T>[]>([]);
-
-  private itemsToBuffer = 0;
 
   startBuffer(itemsToBuffer = 100): void {
     this.itemsToBuffer = itemsToBuffer;
@@ -22,10 +20,9 @@ export class Store<T> {
     return this.state$.pipe(
       map(state => this.selectPartOfState(state, [...selectors])),
       distinctUntilChanged());
-
   }
 
-  remove<S>(selectors: any[]): (state: T) => T {
+  remove(selectors: any[]): (state: T) => T {
     const fn = (state: T) => this.removePartOfState(state, selectors);
     this.stateSub$.next(fn(this.stateSub$.getValue()));
     this.addToBuffer(fn);
@@ -33,9 +30,14 @@ export class Store<T> {
   }
 
   update(selectors: any[], itemToUpdate: any): (state: T) => T {
+    console.log('START UPDATE', this.selectPartOfState(this.stateSub$.getValue(), selectors));
+    console.log('-----------------------');
     const fn = (state: T) => this.updatePartOfState(state, selectors, itemToUpdate);
-    this.stateSub$.next(fn(this.stateSub$.getValue()));
+    const newState = fn(this.stateSub$.getValue());
+    this.stateSub$.next(newState);
     this.addToBuffer(fn);
+    console.log('END UPDATE', this.selectPartOfState(this.stateSub$.getValue(), selectors));
+    console.log('-----------------------');
     return fn;
   }
 
@@ -56,22 +58,23 @@ export class Store<T> {
   }
 
   private selectPartOfState<S>(state: S, selectors: ((state: S) => S)[]): S {
-    const currentSelector = selectors.shift();
+    const newSelectors = [...selectors];
+    const currentSelector = newSelectors.shift();
 
     if (!currentSelector) {
       return state;
     }
-    return this.selectPartOfState(currentSelector(state), selectors);
+    return this.selectPartOfState(currentSelector(state), newSelectors);
   }
 
   private updatePartOfState<S>(state: S, selectors: ((state: S) => S)[], itemToUpdate?: any): S {
     const newSelectors = [...selectors];
     const currentSelector = newSelectors.shift();
-    console.log(currentSelector);
     if (!currentSelector) {
       return Array.isArray(state) ? [...itemToUpdate] : { ...itemToUpdate };
     }
     const foundItem = currentSelector(state);
+    console.log(currentSelector, foundItem);
     return (Array.isArray(state)
       ? state.map(i => i === foundItem
         ? this.updatePartOfState(foundItem, newSelectors, itemToUpdate)
@@ -102,7 +105,6 @@ export class Store<T> {
     return (Array.isArray(state)
       ? state.map(i => i === foundItem ? this.pushPartOfState(foundItem, newSelectors, itemToUpdate) : i)
       : { ...state, [this.getKey(state, foundItem)]: this.pushPartOfState(foundItem, newSelectors, itemToUpdate) }) as S;
-
   }
 
   private getKey<S>(object: S, item: any): string {
@@ -112,7 +114,6 @@ export class Store<T> {
 
   undo(fn: (state: T) => T): void {
     const currentBuffer: BufferEntry<T>[] = [...this.stateBuffer$.getValue()];
-
     const rolledBackState = currentBuffer
       .filter(v => v.fn !== fn)
       .map(v => v.fn)

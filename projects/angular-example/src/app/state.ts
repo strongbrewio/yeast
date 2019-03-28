@@ -1,5 +1,6 @@
 import { Person } from './person.type';
 import { Film } from './film.type';
+import { Selector } from '@yeast/state';
 
 export type ApplicationState = {
   readonly people: Person[];
@@ -10,23 +11,37 @@ export const initialState: ApplicationState = {
   selectedPerson: null
 };
 
-export type Selector = () => ((state: any) => any)[];
+export class PeopleSelectors  {
+  static people(): Selector {
+    return [(state: ApplicationState) => state.people];
+  }
 
-export const peopleSelector: Selector = () => [(state: ApplicationState) => state.people];
-export const selectedPersonSelector: Selector = () => [(state: ApplicationState) => state.selectedPerson];
-export const personSelector = (id: string) =>
-  [
-    ...peopleSelector(),
-    (people: Person[]) => people.find(p => p.id === id)
-  ];
-export const filmsSelector = () => [(p: Person) => p.films];
+  static selectedPerson(): Selector {
+    return [(state: ApplicationState) => state.selectedPerson];
+  }
 
-export const filmSelector = (person: Person, film: Film) =>
-  [
-    ...personSelector(person.id),
-    ...filmsSelector(),
-    (films: Film[]) => films.find(f => f.id === film.id)
-  ];
+  static person(id: string): Selector {
+    return this.people().concat(
+      (people: Person[]) => people.find(p => p.id === id)
+    );
+  }
 
+  static films(personId: string): Selector {
+    return this.person(personId).concat((p: Person) => p.films);
+  }
 
+  static film(person: Person, film: Film): Selector {
+    return this.films(person.id)
+      .concat((films: Film[]) => films.find(f => f.id === film.id));
+  }
 
+  static selectedPersonOfPeopleName(): Selector {
+    return createCombinedSelector(this.selectedPerson(), this.people(), (person: Person, people: Person[]) => {
+      return people.find(p => p.id === person.id).name;
+    });
+  }
+}
+
+function createCombinedSelector(selector1: Selector, selector2: Selector, fn): Selector {
+  return [() => selector1];
+}
